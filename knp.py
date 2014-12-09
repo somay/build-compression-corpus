@@ -1,16 +1,38 @@
 #!/usr/bin/python3
 from subprocess import Popen, PIPE
-import sys, re, functools
-from newspapers import yield_headline_and_1st_sent
+import sys, re, functools, unittest
+import xml.etree.ElementTree as ET
 from knp2json import analyze_knp, show_analyzed_knp_info
 
 juman = Popen("juman", stdin=PIPE, stdout=PIPE, universal_newlines=True)
 knp = Popen(("knp", "-ne", "-tab"), stdin=PIPE, stdout=PIPE, universal_newlines=True)
 
+def yield_headline_and_1st_sent(filename):
+    title, text = '', ''
+    pattern = re.compile(r'([^。「」]*?「.*?」)*[^。「」]*?。') #日本語の1文にマッチする正規表現
+    
+    for event, elem in ET.iterparse(filename):
+        if elem.tag == 'TITLE':
+            title = elem.text
+        elif elem.tag == 'TEXT':
+            if title and elem.text:
+                # elem.textから最初の文を抜き出す
+                for line in elem.text.split('\n'):
+                    matchobj = pattern.search(line)
+                    if matchobj:
+                        text = matchobj.group(0)
+                        break
+                if title and text:
+                    yield title, text
+            title, text = '', ''
+        elif elem.tag == 'DOC':
+            continue
+        elem.clear()
+
 def decode_juman_info(juman_output):
     result = []
     for line in juman_output.split('\n'):
-        if line != 'EOS' and line != '':
+        if line != 'EOS' and line != '' and line[0] != '@':
             morpheme = line.split(' ', 11)
             result.append(morpheme)
     return result
@@ -43,47 +65,56 @@ def extract_open_classes(morphemes):
 
 def mark_words_in_sent(sent_morphemes, title_morphemes, open_classes):
     for i in range(len(open_classes)):
-        ls = list(filter(lambda j: sent_morphemes[j]['original'] == open_classes[i],
+        ls = list(filter(lambda j: sent_morphemes[j][2] == open_classes[i],
                         range(len(sent_morphemes))))
-        lt = list(filter(lambda j: title_morphemes[j][3] == open_classes[i],
+        lt = list(filter(lambda j: title_morphemes[j][2] == open_classes[i],
                          range(len(title_morphemes))))
         if len(ls) == 1:
-            sent_morphemes[ls[0]]['marked'] = True
+            sent_morphemes[ls[0]][11] = True
         elif len(ls) >= 2:
             was_marked = False
-            if len(lt) == 1:
+            for k in lt:
                 for j in ls:
-                    ms1 = ''.join(m['original'] for m in sent_morphemes[j:j+3])
-                    ms2 = ''.join(m['original'] for m in sent_morphemes[j-1:j+2])
-                    ms3 = ''.join(m['original'] for m in sent_morphemes[j-2:j+1])
-                    lt[0] = k
-                    mt1 = ''.join(m[3] for m in title_morphemes[k:k+3])
-                    mt2 = ''.join(m[3] for m in title_morphemes[k-1:k+2])
-                    mt3 = ''.join(m[3] for m in title_morphemes[k-2:k+1])
+                    ms1 = ''.join(m[2] for m in sent_morphemes[j:j+3])
+                    ms2 = ''.join(m[2] for m in sent_morphemes[j-1:j+2])
+                    ms3 = ''.join(m[2] for m in sent_morphemes[j-2:j+1])
+                    mt1 = ''.join(m[2] for m in title_morphemes[k:k+3])
+                    mt2 = ''.join(m[2] for m in title_morphemes[k-1:k+2])
+                    mt3 = ''.join(m[2] for m in title_morphemes[k-2:k+1])
                     pred = lambda x,y: x and y and x == y
                     if pred(ms1, mt1) or pred(ms2, mt2) or pred(ms3, mt3):
-                        sent_morphemes[j]['marked'] = True
+                        sent_morphemes[j][11] = True
                         was_marked = True
+                        print("mark_words_in_sent: 1 mark", j, k, open_classes[i], file=sys.stderr)
+                        print(''.join(m[0] for m in sent_morphemes))
+                        print(''.join(m[0] for m in title_morphemes))
                         break
 
-                    try:
-                        prev_oc = next(m['original'] for m in reversed(sent_morphemes[:j])
-                                       if m['original'] in open_classes)
+                    try:                  # prev_oc = sent_morphemes[j]の一つ前のopen class
+                        prev_oc = next(m[2] for m in reversed(sent_morphemes[:j])
+                                       if m[2] in open_classes)
                     except StopIteration:
                         prev_oc = None
-                    try:
-                        next_oc = next(m['original'] for m in sent_morphemes[j+1:]
-                                       if m['original'] in open_classes)
+                    try:                  # next_oc = sent_morphemes[j]の一つ後のopen class
+                        next_oc = next(m[2] for m in sent_morphemes[j+1:]
+                                       if m[2] in open_classes)
                     except StopIteration:
                         next_oc = None
-                    if (prev_oc and prev_oc == open_classes[i-1]) and (next_oc and next_oc == open_classes[i+1]):
-                        sent_morphemes[j]['marked'] = True
+                    oct1 = open_classes[i-1] if i > 0 else None
+                    oct2 = open_classes[i+1] if i+1 < len(open_classes) else None
+                    pred = lambda x,y: (not (x and y)) or x == y
+                    if pred(prev_oc, oct1) or pred(next_oc, oct2):
+                        sent_morphemes[j][11] = True
                         was_marked = True
+                        print("mark_words_in_sent: 1 mark", j, k,open_classes[i], file=sys.stderr)
+                        print(''.join(m[0] for m in sent_morphemes))
+                        print(''.join(m[0] for m in title_morphemes))
                         break
-                else:
-                    print("mark_words_in_sent", file=sys.stderr)
-            if not was_marked:
-                    print("mark_words_in_sent: 0 mark", open_classes[i], file=sys.stderr)
+                if not was_marked:
+                    pass
+                    # print("mark_words_in_sent: 0 mark", open_classes[i], file=sys.stderr)
+                    # print(''.join(m[0] for m in sent_morphemes))
+                    # print(''.join(m[0] for m in title_morphemes))
 
     return sent_morphemes
                     
@@ -169,6 +200,8 @@ def grammarize_headline(headline, sent):
 
         # TODO: 単語の順序も考える
         if len(open_classes) >= 4 and set(open_classes).issubset(set(sent_words)):
+            mark_words_in_sent(sent_morphemes, title_morphemes, open_classes)
+            return 
             knp.stdin.write(sent_juman_output)
             sent_knp_output = read_to_EOS(knp.stdout)
             knp_info = analyze_knp(sent_knp_output)
@@ -177,12 +210,12 @@ def grammarize_headline(headline, sent):
             return compressed
         else:
             titles = titles[:-1]
-    
+
+
 if __name__ == '__main__':
-    
     for hline, sent in yield_headline_and_1st_sent(sys.argv[1]):
-        hline = "オーロラ展:野口宇宙飛行士らが宇宙で撮影 東京・新宿で5日から"
-        sent = " 野口聡一宇宙飛行士(45)らが国際宇宙ステーションから撮影したオーロラの写真を中心とした「宇宙から見たオーロラ展2011」が5~31日、東京都新宿区新宿3のコニカミノルタプラザ(03・3225・5001)で開かれる。"
+        # hline = "オーロラ展:野口宇宙飛行士らが宇宙で撮影 東京・新宿で5日から"
+        # sent = " 野口聡一宇宙飛行士(45)らが国際宇宙ステーションから撮影したオーロラの写真を中心とした「宇宙から見たオーロラ展2011」が5~31日、東京都新宿区新宿3のコニカミノルタプラザ(03・3225・5001)で開かれる。"
         compressed = grammarize_headline(hline, sent[1:])
         if compressed:
             print(hline)
