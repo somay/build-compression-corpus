@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 from subprocess import Popen, PIPE
-import sys, re, functools, unittest
+import sys, re, functools, itertools, unittest
 import xml.etree.ElementTree as ET
 from knp2json import analyze_knp, show_analyzed_knp_info
 
@@ -74,6 +74,7 @@ def first_open_class(mrphs):
     return None
 
 def mark_words_in_sent(sent_mrphs, title_mrphs, open_classes):
+    marked_morphemes = []
     open_class_dict = {}
     for oc in set(open_classes):
         iss = list(filter(lambda i: sent_mrphs[i][2] == oc, range(len(sent_mrphs))))
@@ -84,7 +85,7 @@ def mark_words_in_sent(sent_mrphs, title_mrphs, open_classes):
         iss, its = open_class_dict[oc]
         if len(iss) <= len(its):
             for i in iss:
-                sent_mrphs[i][11] = True
+                marked_morphemes.append(i)
         else:                             # titleに現れる回数だけsent内にmarkをつける
             # 各open classの出現iに対してscoreをつけて、scoreの高いlen(its)個をmark
             scores = dict((i,0) for i in iss)
@@ -128,15 +129,18 @@ def mark_words_in_sent(sent_mrphs, title_mrphs, open_classes):
             #             print(itss, isss)
             # print(scores)
             # score順にソートする
-            marked_mrphs = sorted(iss, key=lambda i:scores[i], reverse=True)
+            candidates = sorted(iss, key=lambda i:scores[i], reverse=True)
             # マークをつける
             sent = [m[2] for m in sent_mrphs]
-            for i in marked_mrphs[:len(its)]:
-                sent_mrphs[i][11] = True
+            for i in candidates[:len(its)]:
+                marked_morphemes.append(i)
                 # print(sent[i-1 if i >0 else 0:i+2], end=', ')
-            # print(sent_mrphs[marked_mrphs[0]][2])
+            # print(sent_mrphs[candidates[0]][2])
             # print(''.join(m[0] for m in sent_mrphs))
             # print(''.join(m[0] for m in title_mrphs))
+
+    return list(sorted(marked_morphemes))
+
 # 連結で
 # 述語で終わっている
 # 最小の木
@@ -217,11 +221,11 @@ def grammarize_headline(headline, sent):
 
         # TODO: 単語の順序も考える
         if len(open_classes) >= 4 and set(open_classes).issubset(set(sent_words)):
-            mark_words_in_sent(sent_morphemes, title_morphemes, open_classes)
             return 
             knp.stdin.write(sent_juman_output)
             sent_knp_output = read_to_EOS(knp.stdout)
             knp_info = analyze_knp(sent_knp_output)
+            marked_mrphs = mark_words_in_sent(knp_info['morphemes'], title_morphemes, open_classes)
             # show_analyzed_knp_info(knp_info)
             compressed = compress_sentence(knp_info, title_morphemes, open_classes)
             return compressed
