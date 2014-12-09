@@ -74,72 +74,81 @@ def first_open_class(mrphs):
     return None
 
 def mark_words_in_sent(sent_mrphs, title_mrphs, open_classes):
-    marked_morphemes = []
+    marked_mrphs = []
     open_class_dict = {}
+    # is_plural = False
     for oc in set(open_classes):
-        iss = list(filter(lambda i: sent_mrphs[i][2] == oc, range(len(sent_mrphs))))
         its = list(filter(lambda i: title_mrphs[i][2] == oc, range(len(title_mrphs))))
-        open_class_dict[oc] = (iss, its)
+        iss = list(filter(lambda i: sent_mrphs[i][2] == oc, range(len(sent_mrphs))))
+        open_class_dict[oc] = (its, iss)
+        # if len(iss) > len(its):
+        #     is_plural = True
 
+    # titleに現れる回数だけsent内にmarkをつける
     for oc in open_class_dict:
-        iss, its = open_class_dict[oc]
-        if len(iss) <= len(its):
-            for i in iss:
-                marked_morphemes.append(i)
-        else:                             # titleに現れる回数だけsent内にmarkをつける
-            # 各open classの出現iに対してscoreをつけて、scoreの高いlen(its)個をmark
-            scores = dict((i,0) for i in iss)
-            for i in its:
-                for j in iss:
-                    # 周辺の形態素の一致によるscore付け
-                    identity_count = 0
-                    for o in range(-2, 3):
-                        io, jo = i + o, j + o
-                        if io < 0 or io >= len(title_mrphs) or \
-                           jo < 0 or jo >= len(sent_mrphs):
-                            continue
-                        if title_mrphs[io][2] == sent_mrphs[jo][2]:
-                            identity_count += 1 if title_mrphs[io][2] != '、' else 0.1
-                        else:
-                            identity_count = 0
-                        scores[j] = max(scores[j], identity_count - 1)
+        its, iss = open_class_dict[oc]
 
-                    # 周辺のopen classの一致によるscore付け
-                    identity_count = 0
-                    itss = sorted(k for _, ks in open_class_dict.values() for k in ks)
-                    isss = sorted(k for ks, _ in open_class_dict.values() for k in ks)
-                    next_it = [k for k in itss if k > i]
-                    next_is = [k for k in isss if k > j]
-                    next_tm = title_mrphs[next_it[0]][2] if next_it else None
-                    next_sm = sent_mrphs[next_is[0]][2] if next_is else None
-                    if next_tm == next_sm:   # open class間の距離によって点数を変える
-                        penalty = (next_is[0] - j if next_is else len(sent_mrphs) - j) / len(sent_mrphs)
-                        identity_count += 1 - penalty
-                    prev_it = [k for k in reversed(itss) if k < i]
-                    prev_is = [k for k in reversed(isss) if k < j]
-                    prev_tm = title_mrphs[prev_it[0]][2] if prev_it else None
-                    prev_sm = sent_mrphs[prev_is[0]][2] if prev_is else None
-                    if prev_tm == prev_sm:   # open class間の距離によって点数を変える
-                        penalty = (j - (prev_is[0] if prev_is else 0)) / len(sent_mrphs)
-                        identity_count += 1 - penalty
-                    scores[j] += identity_count
-            #         if title_mrphs[i][2] =='進退':
-            #             print(next_tm, next_sm)
-            #             print(extract_open_classes(title_mrphs))
-            #             print(itss, isss)
-            # print(scores)
-            # score順にソートする
-            candidates = sorted(iss, key=lambda i:scores[i], reverse=True)
-            # マークをつける
-            sent = [m[2] for m in sent_mrphs]
-            for i in candidates[:len(its)]:
-                marked_morphemes.append(i)
-                # print(sent[i-1 if i >0 else 0:i+2], end=', ')
-            # print(sent_mrphs[candidates[0]][2])
-            # print(''.join(m[0] for m in sent_mrphs))
-            # print(''.join(m[0] for m in title_mrphs))
+        # 各open classの出現iに対してscoreをつけて、scoreの高いlen(its)個をmark
+        scores = dict(((i,j),0) for i in its for j in iss)
+    
+        for i, j in scores.keys():
 
-    return list(sorted(marked_morphemes))
+            # 周辺の形態素の一致によるscore付け
+            identity_count = 0
+            for o in range(-2, 3):
+                io, jo = i + o, j + o
+                if io < 0 or io >= len(title_mrphs) or \
+                   jo < 0 or jo >= len(sent_mrphs):
+                    continue
+                if title_mrphs[io][2] == sent_mrphs[jo][2]:
+                    identity_count += 1 if title_mrphs[io][2] != '、' else 0.1
+                else:
+                    identity_count = 0
+                scores[(i,j)] = max(scores[(i,j)], identity_count - 1)
+
+             # 周辺のopen classの一致によるscore付け
+            oc_score = 0
+            len_sent = len(sent_mrphs)
+
+            # 一つ後のopen class
+            itss = sorted(k for ks, _ in open_class_dict.values() for k in ks)
+            isss = sorted(k for _, ks in open_class_dict.values() for k in ks)
+            next_it = [k for k in itss if k > i]
+            next_is = [k for k in isss if k > j]
+            next_tm = title_mrphs[next_it[0]][2] if next_it else None
+            next_sm = sent_mrphs[next_is[0]][2] if next_is else None
+            if next_tm == next_sm:   # open class間の距離によって点数を変える
+                penalty = (next_is[0] - j if next_is else len_sent - j) / len_sent
+                oc_score += 1 - penalty
+
+            # 一つ前のopen class
+            prev_it = [k for k in reversed(itss) if k < i]
+            prev_is = [k for k in reversed(isss) if k < j]
+            prev_tm = title_mrphs[prev_it[0]][2] if prev_it else None
+            prev_sm = sent_mrphs[prev_is[0]][2] if prev_is else None
+            if prev_tm == prev_sm:   # open class間の距離によって点数を変える
+                penalty = (j - (prev_is[0] if prev_is else 0)) / len_sent
+                oc_score += 1 - penalty
+
+            scores[(i,j)] += oc_score
+
+        # sent = [m[0] for m in sent_mrphs]
+
+        # scoreの高いi,jのペアから順にmarkしていく
+        # 既にi, jのどちらかがmarked_mrphsに含まれているペアは新たに追加しない
+        for i,j in sorted(scores.keys(), key=lambda p: scores[p], reverse=True):
+            if (not i in map(lambda p:p[0], marked_mrphs)) and \
+               (not j in map(lambda p:p[1], marked_mrphs)):
+                marked_mrphs.append((i,j))
+
+    # if is_plural:
+    #     for i,j in marked_mrphs:
+    #         print(sent[j-1 if j > 0 else 0:j+2], end=', ')
+    #         print(sent_mrphs[j][2])
+    #     print(''.join(m[0] for m in sent_mrphs))
+    #     print(''.join(m[0] for m in title_mrphs))
+
+    return marked_mrphs
 
 # 連結で
 # 述語で終わっている
@@ -225,9 +234,9 @@ def grammarize_headline(headline, sent):
             knp.stdin.write(sent_juman_output)
             sent_knp_output = read_to_EOS(knp.stdout)
             knp_info = analyze_knp(sent_knp_output)
-            marked_mrphs = mark_words_in_sent(knp_info['morphemes'], title_morphemes, open_classes)
+            oc_pairs = mark_words_in_sent(knp_info['morphemes'], title_morphemes, open_classes)
             # show_analyzed_knp_info(knp_info)
-            compressed = compress_sentence(knp_info, title_morphemes, open_classes)
+            compressed = compress_sentence(knp_info, title_morphemes, oc_pairs)
             return compressed
         else:
             titles = titles[:-1]
