@@ -153,61 +153,77 @@ def mark_words_in_sent(sent_mrphs, title_mrphs, open_classes):
 # 連結で
 # 述語で終わっている
 # 最小の木
-def compress_sentence(knp_info, title_morphemes, open_classes):
-    sentence = []
-    phrases, basics, morphemes = knp_info['phrases'], knp_info['basics'], knp_info['morphemes']
-    necessary_phrase_ids = set()
-    for i in range(len(phrases)):
-        for j in phrases[i]['morphemes']:
-            if morphemes[j]['original'] in open_classes:
-                necessary_phrase_ids.add(i)
+def get_minimal_basic_tree(basics, morphemes, oc_indices):
+    necessary_basic_ids = set()
+    for i in range(len(basics)):
+        for j in basics[i]['morphemes']:
+            if j in oc_indices:
+                necessary_basic_ids.add(i)
 
     dependency_paths = []
-    for i in necessary_phrase_ids:
-        path = set()                      # path from phrase[i] to the root of phrase tree
+    for i in necessary_basic_ids:
+        path = {i}  # path from phrase[i] to the root of phrase tree
         while i != -1:
+            if basics[i]['relationType'] in ['A']:
+                i = basics[i]['relation']
+                continue
             path.add(i)
-            while phrases[i]['relationType'] == 'P':
-                i = phrases[i]['relation']
-            i = phrases[i]['relation']
-                
+            try:                            # 用言の主語を必ず短縮文に含める
+                path.add(basics[i]['caseAnalysis']['ガ'][-1]['#basics'])
+            except:
+                pass
+            if basics[i]['relationType'] == 'P':
+                i = basics[i]['relation']
+            i = basics[i]['relation']
         dependency_paths.append(path)
 
     intersection = functools.reduce(lambda a, b: a.intersection(b), dependency_paths)
     union = functools.reduce(lambda a, b: a.union(b), dependency_paths)
-    complement = set(range(len(phrases))) - union
+    complement = set(range(len(basics))) - union
 
     for i in sorted(intersection):
         intersection.remove(i)
-        if phrases[i]['features']['用言']: # phrase[i] is the new root of compressed sentence
+        if basics[i]['features']['用言']: # phrase[i] is the new root of compressed sentence
             break
 
+    compressed_basic_ids = list(range(len(basics)))
     for i in intersection.union(complement):
-        phrases[i] = None
+        compressed_basic_ids.remove(i)
+
+    return compressed_basic_ids
+
+def compress_sentence(knp_info, title_mrphs, oc_pairs):
+    ocs_in_title, ocs_in_sent = list(zip(*oc_pairs))
+    basics, morphemes = knp_info['basics'], knp_info['morphemes']
+
+    compressed_basic_ids = get_minimal_basic_tree(basics, morphemes, ocs_in_sent)
 
     # if 文のopen classの並びにおいて隣り合うopen classがタイトルにおいても隣り合っている
     # and タイトルにおいて、隣り合うopen classの間に助詞がある
     # then 文中のopen classの間の形態素をその助詞に置き換える
     # print(open_classes)
-    for i in range(len(title_morphemes) - 2):
-        curr_mrph = title_morphemes[i][2]
-        if curr_mrph in open_classes:
-            next_mrph = title_morphemes[i + 2][2]
-            print(curr_mrph, next_mrph)
-            if title_morphemes[i + 1][3] == '助詞' and next_mrph in open_classes:
-                j = [m['original'] for m in morphemes].index(curr_mrph)
-                k = next(i for i in range(j+1, len(morphemes)) if morphemes[i]['original'] in open_classes)
-                # print(j, k)
-                if morphemes[k]['original'] == next_mrph:
-                    for im in range(j+1, k):
-                        morphemes[im]['input'] = ""
-                    morphemes[j+1]['input'] = title_morphemes[i + 1][0]
+    for i,j in oc_pairs:
+        if i+2 < len(title_mrphs) and title_mrphs[i+1][3] == '助詞' and i+2 in ocs_in_title:
+            ks = [k for k in sorted(ocs_in_sent) if k > j]
+            if ks and morphemes[ks[0]][2] == title_mrphs[i+2][2]:
+                for im in range(j+1, ks[0]):
+                    morphemes[im][0] = ""
+                morphemes[j+1][0] = title_mrphs[i+1][0]
+
+    compressed_mrph_ids = []
+    for i in compressed_basic_ids:
+        for j in basics[i]['morphemes']:
+            compressed_mrph_ids.append(j)
+            
+    for i in reversed(compressed_mrph_ids):
+        if not (morphemes[i][3] in ['助詞', '特殊']):
+            break
+        morphemes[i][0] = ""
 
     compressed = ""
-    for p in phrases:
-        if p:
-            for i in p['morphemes']:
-                compressed += morphemes[i]['input']
+    for i in compressed_mrph_ids:
+        if not (morphemes[i][0] == '「' or morphemes[i][0] == '」'):
+            compressed += morphemes[i][0]
     return compressed
 
 
@@ -230,7 +246,6 @@ def grammarize_headline(headline, sent):
 
         # TODO: 単語の順序も考える
         if len(open_classes) >= 4 and set(open_classes).issubset(set(sent_words)):
-            return 
             knp.stdin.write(sent_juman_output)
             sent_knp_output = read_to_EOS(knp.stdout)
             knp_info = analyze_knp(sent_knp_output)
@@ -247,11 +262,11 @@ if __name__ == '__main__':
         # hline = "オーロラ展:野口宇宙飛行士らが宇宙で撮影 東京・新宿で5日から"
         # sent = " 野口聡一宇宙飛行士(45)らが国際宇宙ステーションから撮影したオーロラの写真を中心とした「宇宙から見たオーロラ展2011」が5~31日、東京都新宿区新宿3のコニカミノルタプラザ(03・3225・5001)で開かれる。"
         compressed = grammarize_headline(hline, sent[1:])
-        # if compressed:
-        #     print(hline)
-        #     print(sent)
-        #     print(compressed)
-        #     print()
+        if compressed:
+            print(hline)
+            print(sent)
+            print(compressed)
+            print()
         #     sys.stdin.readline()
     knp.terminate()
     juman.terminate()
