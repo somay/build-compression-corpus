@@ -101,12 +101,14 @@ def analyze_case_analysis(case_analysis_string):
     return d
 
 def analyze_morpheme(morpheme_info):
-    s = morpheme_info[0].split(' ')
-    d = {'input': s[0], 'pronunciation': s[1], 'original': s[2], 'pos': s[3], 'posId': s[4], 'subPos': s[5],
-         'subPosId': s[6], 'inflectionType': s[7], 'inflectionTypeId': s[8], 'inflection': s[9], 'inflectionId': s[10],
-         'others': ' '.join(s[11:])}
-    d['features'] = decode_features(morpheme_info[1:], d)
-    return d
+    s = morpheme_info[0].split(' ', 11)
+    d = {}
+    s.append(decode_features(morpheme_info[1:], d))
+    # d = {'input': s[0], 'pronunciation': s[1], 'original': s[2], 'pos': s[3], 'posId': s[4], 'subPos': s[5],
+    #      'subPosId': s[6], 'inflectionType': s[7], 'inflectionTypeId': s[8], 'inflection': s[9], 'inflectionId': s[10],
+    #      'others': s[11]}
+    # d['features'] = decode_features(morpheme_info[1:], d)
+    return s
 
 
 def show_analyzed_knp_info(analyzed_knp_info):

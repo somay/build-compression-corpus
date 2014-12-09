@@ -58,68 +58,85 @@ def read_to_EOS(stream):
             break
     return output
 
+def is_open_class(mrph):
+    return mrph[3] in ['名詞', '形容詞', '副詞', '動詞'] or \
+          (mrph[3] == '未定義語' and len(mrph[0]) >= 2)
+
 # headlineから名詞、動詞、副詞、形容詞のリストを取り出す。
 def extract_open_classes(morphemes):
-    return [m[2] for m in morphemes if m[3] in ['名詞', '形容詞', '副詞', '動詞'] or \
-                                      (m[3] == '未定義語' and len(m[0]) >= 2)]
+    return [m[2] for m in morphemes if is_open_class(m)]
 
-def mark_words_in_sent(sent_morphemes, title_morphemes, open_classes):
-    for i in range(len(open_classes)):
-        ls = list(filter(lambda j: sent_morphemes[j][2] == open_classes[i],
-                        range(len(sent_morphemes))))
-        lt = list(filter(lambda j: title_morphemes[j][2] == open_classes[i],
-                         range(len(title_morphemes))))
-        if len(ls) == 1:
-            sent_morphemes[ls[0]][11] = True
-        elif len(ls) >= 2:
-            was_marked = False
-            for k in lt:
-                for j in ls:
-                    ms1 = ''.join(m[2] for m in sent_morphemes[j:j+3])
-                    ms2 = ''.join(m[2] for m in sent_morphemes[j-1:j+2])
-                    ms3 = ''.join(m[2] for m in sent_morphemes[j-2:j+1])
-                    mt1 = ''.join(m[2] for m in title_morphemes[k:k+3])
-                    mt2 = ''.join(m[2] for m in title_morphemes[k-1:k+2])
-                    mt3 = ''.join(m[2] for m in title_morphemes[k-2:k+1])
-                    pred = lambda x,y: x and y and x == y
-                    if pred(ms1, mt1) or pred(ms2, mt2) or pred(ms3, mt3):
-                        sent_morphemes[j][11] = True
-                        was_marked = True
-                        print("mark_words_in_sent: 1 mark", j, k, open_classes[i], file=sys.stderr)
-                        print(''.join(m[0] for m in sent_morphemes))
-                        print(''.join(m[0] for m in title_morphemes))
-                        break
 
-                    try:                  # prev_oc = sent_morphemes[j]の一つ前のopen class
-                        prev_oc = next(m[2] for m in reversed(sent_morphemes[:j])
-                                       if m[2] in open_classes)
-                    except StopIteration:
-                        prev_oc = None
-                    try:                  # next_oc = sent_morphemes[j]の一つ後のopen class
-                        next_oc = next(m[2] for m in sent_morphemes[j+1:]
-                                       if m[2] in open_classes)
-                    except StopIteration:
-                        next_oc = None
-                    oct1 = open_classes[i-1] if i > 0 else None
-                    oct2 = open_classes[i+1] if i+1 < len(open_classes) else None
-                    pred = lambda x,y: (not (x and y)) or x == y
-                    if pred(prev_oc, oct1) or pred(next_oc, oct2):
-                        sent_morphemes[j][11] = True
-                        was_marked = True
-                        print("mark_words_in_sent: 1 mark", j, k,open_classes[i], file=sys.stderr)
-                        print(''.join(m[0] for m in sent_morphemes))
-                        print(''.join(m[0] for m in title_morphemes))
-                        break
-                if not was_marked:
-                    pass
-                    # print("mark_words_in_sent: 0 mark", open_classes[i], file=sys.stderr)
-                    # print(''.join(m[0] for m in sent_morphemes))
-                    # print(''.join(m[0] for m in title_morphemes))
+def first_open_class(mrphs):
+    for m in mrphs:
+        if is_open_class(m):
+            return m
+    return None
 
-    return sent_morphemes
-                    
-        
+def mark_words_in_sent(sent_mrphs, title_mrphs, open_classes):
+    open_class_dict = {}
+    for oc in set(open_classes):
+        iss = list(filter(lambda i: sent_mrphs[i][2] == oc, range(len(sent_mrphs))))
+        its = list(filter(lambda i: title_mrphs[i][2] == oc, range(len(title_mrphs))))
+        open_class_dict[oc] = (iss, its)
 
+    for oc in open_class_dict:
+        iss, its = open_class_dict[oc]
+        if len(iss) <= len(its):
+            for i in iss:
+                sent_mrphs[i][11] = True
+        else:                             # titleに現れる回数だけsent内にmarkをつける
+            # 各open classの出現iに対してscoreをつけて、scoreの高いlen(its)個をmark
+            scores = dict((i,0) for i in iss)
+            for i in its:
+                for j in iss:
+                    # 周辺の形態素の一致によるscore付け
+                    identity_count = 0
+                    for o in range(-2, 3):
+                        io, jo = i + o, j + o
+                        if io < 0 or io >= len(title_mrphs) or \
+                           jo < 0 or jo >= len(sent_mrphs):
+                            continue
+                        if title_mrphs[io][2] == sent_mrphs[jo][2]:
+                            identity_count += 1 if title_mrphs[io][2] != '、' else 0.1
+                        else:
+                            identity_count = 0
+                        scores[j] = max(scores[j], identity_count - 1)
+
+                    # 周辺のopen classの一致によるscore付け
+                    identity_count = 0
+                    itss = sorted(k for _, ks in open_class_dict.values() for k in ks)
+                    isss = sorted(k for ks, _ in open_class_dict.values() for k in ks)
+                    next_it = [k for k in itss if k > i]
+                    next_is = [k for k in isss if k > j]
+                    next_tm = title_mrphs[next_it[0]][2] if next_it else None
+                    next_sm = sent_mrphs[next_is[0]][2] if next_is else None
+                    if next_tm == next_sm:   # open class間の距離によって点数を変える
+                        penalty = (next_is[0] - j if next_is else len(sent_mrphs) - j) / len(sent_mrphs)
+                        identity_count += 1 - penalty
+                    prev_it = [k for k in reversed(itss) if k < i]
+                    prev_is = [k for k in reversed(isss) if k < j]
+                    prev_tm = title_mrphs[prev_it[0]][2] if prev_it else None
+                    prev_sm = sent_mrphs[prev_is[0]][2] if prev_is else None
+                    if prev_tm == prev_sm:   # open class間の距離によって点数を変える
+                        penalty = (j - (prev_is[0] if prev_is else 0)) / len(sent_mrphs)
+                        identity_count += 1 - penalty
+                    scores[j] += identity_count
+            #         if title_mrphs[i][2] =='進退':
+            #             print(next_tm, next_sm)
+            #             print(extract_open_classes(title_mrphs))
+            #             print(itss, isss)
+            # print(scores)
+            # score順にソートする
+            marked_mrphs = sorted(iss, key=lambda i:scores[i], reverse=True)
+            # マークをつける
+            sent = [m[2] for m in sent_mrphs]
+            for i in marked_mrphs[:len(its)]:
+                sent_mrphs[i][11] = True
+                # print(sent[i-1 if i >0 else 0:i+2], end=', ')
+            # print(sent_mrphs[marked_mrphs[0]][2])
+            # print(''.join(m[0] for m in sent_mrphs))
+            # print(''.join(m[0] for m in title_mrphs))
 # 連結で
 # 述語で終わっている
 # 最小の木
@@ -158,7 +175,7 @@ def compress_sentence(knp_info, title_morphemes, open_classes):
     # if 文のopen classの並びにおいて隣り合うopen classがタイトルにおいても隣り合っている
     # and タイトルにおいて、隣り合うopen classの間に助詞がある
     # then 文中のopen classの間の形態素をその助詞に置き換える
-    print(open_classes)
+    # print(open_classes)
     for i in range(len(title_morphemes) - 2):
         curr_mrph = title_morphemes[i][2]
         if curr_mrph in open_classes:
@@ -167,7 +184,7 @@ def compress_sentence(knp_info, title_morphemes, open_classes):
             if title_morphemes[i + 1][3] == '助詞' and next_mrph in open_classes:
                 j = [m['original'] for m in morphemes].index(curr_mrph)
                 k = next(i for i in range(j+1, len(morphemes)) if morphemes[i]['original'] in open_classes)
-                print(j, k)
+                # print(j, k)
                 if morphemes[k]['original'] == next_mrph:
                     for im in range(j+1, k):
                         morphemes[im]['input'] = ""
@@ -217,12 +234,12 @@ if __name__ == '__main__':
         # hline = "オーロラ展:野口宇宙飛行士らが宇宙で撮影 東京・新宿で5日から"
         # sent = " 野口聡一宇宙飛行士(45)らが国際宇宙ステーションから撮影したオーロラの写真を中心とした「宇宙から見たオーロラ展2011」が5~31日、東京都新宿区新宿3のコニカミノルタプラザ(03・3225・5001)で開かれる。"
         compressed = grammarize_headline(hline, sent[1:])
-        if compressed:
-            print(hline)
-            print(sent)
-            print(compressed)
-            print()
-            sys.stdin.readline()
+        # if compressed:
+        #     print(hline)
+        #     print(sent)
+        #     print(compressed)
+        #     print()
+        #     sys.stdin.readline()
     knp.terminate()
     juman.terminate()
     sys.exit(0)
