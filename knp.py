@@ -41,16 +41,52 @@ def extract_open_classes(morphemes):
     return [m[2] for m in morphemes if m[3] in ['名詞', '形容詞', '副詞', '動詞'] or \
                                       (m[3] == '未定義語' and len(m[0]) >= 2)]
 
-def mark_words_in_sent(sent_morphemes, open_classes):
-    
+def mark_words_in_sent(sent_morphemes, title_morphemes, open_classes):
     for i in range(len(open_classes)):
-        l = list(filter(lambda j: sent_morphemes[j]['original'] == open_classes[i],
+        ls = list(filter(lambda j: sent_morphemes[j]['original'] == open_classes[i],
                         range(len(sent_morphemes))))
-        if len(l) == 1:
-            sent_morphemes[l[0]]['marked'] = True
-        elif len(l) >= 2:
-            if 
-        
+        lt = list(filter(lambda j: title_morphemes[j][3] == open_classes[i],
+                         range(len(title_morphemes))))
+        if len(ls) == 1:
+            sent_morphemes[ls[0]]['marked'] = True
+        elif len(ls) >= 2:
+            was_marked = False
+            if len(lt) == 1:
+                for j in ls:
+                    ms1 = ''.join(m['original'] for m in sent_morphemes[j:j+3])
+                    ms2 = ''.join(m['original'] for m in sent_morphemes[j-1:j+2])
+                    ms3 = ''.join(m['original'] for m in sent_morphemes[j-2:j+1])
+                    lt[0] = k
+                    mt1 = ''.join(m[3] for m in title_morphemes[k:k+3])
+                    mt2 = ''.join(m[3] for m in title_morphemes[k-1:k+2])
+                    mt3 = ''.join(m[3] for m in title_morphemes[k-2:k+1])
+                    pred = lambda x,y: x and y and x == y
+                    if pred(ms1, mt1) or pred(ms2, mt2) or pred(ms3, mt3):
+                        sent_morphemes[j]['marked'] = True
+                        was_marked = True
+                        break
+
+                    try:
+                        prev_oc = next(m['original'] for m in reversed(sent_morphemes[:j])
+                                       if m['original'] in open_classes)
+                    except StopIteration:
+                        prev_oc = None
+                    try:
+                        next_oc = next(m['original'] for m in sent_morphemes[j+1:]
+                                       if m['original'] in open_classes)
+                    except StopIteration:
+                        next_oc = None
+                    if (prev_oc and prev_oc == open_classes[i-1]) and (next_oc and next_oc == open_classes[i+1]):
+                        sent_morphemes[j]['marked'] = True
+                        was_marked = True
+                        break
+                else:
+                    print("mark_words_in_sent", file=sys.stderr)
+            if not was_marked:
+                    print("mark_words_in_sent: 0 mark", open_classes[i], file=sys.stderr)
+
+    return sent_morphemes
+                    
         
 
 # 連結で
