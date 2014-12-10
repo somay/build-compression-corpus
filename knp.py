@@ -164,9 +164,9 @@ def get_minimal_basic_tree(basics, morphemes, oc_indices):
     for i in necessary_basic_ids:
         path = {i}  # path from phrase[i] to the root of phrase tree
         while i != -1:
-            if basics[i]['relationType'] in ['A']:
-                i = basics[i]['relation']
-                continue
+            # if basics[i]['relationType'] in ['A']:
+            #     i = basics[i]['relation']
+            #     continue
             path.add(i)
             try:                            # 用言の主語を必ず短縮文に含める
                 path.add(basics[i]['caseAnalysis']['ガ'][-1]['#basics'])
@@ -194,10 +194,17 @@ def get_minimal_basic_tree(basics, morphemes, oc_indices):
 
 def compress_sentence(knp_info, title_mrphs, oc_pairs):
     ocs_in_title, ocs_in_sent = list(zip(*oc_pairs))
-    basics, morphemes = knp_info['basics'], knp_info['morphemes']
+    phrases, basics, morphemes = knp_info['phrases'], knp_info['basics'], knp_info['morphemes']
 
     compressed_basic_ids = get_minimal_basic_tree(basics, morphemes, ocs_in_sent)
 
+    compressed_phrase_ids = set()
+    for i in range(len(phrases)):
+        for j in phrases[i]['basics']:
+            if j in compressed_basic_ids:
+                compressed_phrase_ids.add(i)
+    compressed_phrase_ids = list(sorted(compressed_phrase_ids))
+    
     # if 文のopen classの並びにおいて隣り合うopen classがタイトルにおいても隣り合っている
     # and タイトルにおいて、隣り合うopen classの間に助詞がある
     # then 文中のopen classの間の形態素をその助詞に置き換える
@@ -211,8 +218,8 @@ def compress_sentence(knp_info, title_mrphs, oc_pairs):
                 morphemes[j+1][0] = title_mrphs[i+1][0]
 
     compressed_mrph_ids = []
-    for i in compressed_basic_ids:
-        for j in basics[i]['morphemes']:
+    for i in compressed_phrase_ids:
+        for j in phrases[i]['morphemes']:
             compressed_mrph_ids.append(j)
             
     for i in reversed(compressed_mrph_ids):
