@@ -219,13 +219,25 @@ def compress_sentence(knp_info, title_mrphs, oc_pairs):
 
     compressed_mrph_ids = []
     for i in compressed_phrase_ids:
-        for j in phrases[i]['morphemes']:
-            compressed_mrph_ids.append(j)
-            
-    for i in reversed(compressed_mrph_ids):
-        if not (morphemes[i][3] in ['助詞', '特殊']):
-            break
-        morphemes[i][0] = ""
+        j = phrases[i]['relation']
+
+        if phrases[i]['relationType'] == 'P' and not j in compressed_mrph_ids:
+            # 並列している後の助詞を取ってくる
+            im = phrases[i]['morphemes'][:]
+            while morphemes[im[-1]][3] in ['助詞', '特殊']:
+                im.pop(-1)
+            compressed_mrph_ids += im
+            for k in reversed(phrases[j]['morphemes']):
+                if morphemes[k][3] == '特殊':
+                    continue
+                elif morphemes[k][3] == '助詞':
+                    compressed_mrph_ids.append(k)
+                    break
+        else:
+            compressed_mrph_ids += phrases[i]['morphemes']
+
+    while morphemes[compressed_mrph_ids[-1]][3] in ['助詞', '特殊']:
+        compressed_mrph_ids.pop(-1)
 
     compressed = ""
     for i in compressed_mrph_ids:
