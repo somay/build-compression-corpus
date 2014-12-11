@@ -44,8 +44,8 @@ def decode_juman_info(juman_output):
 # TODO: 共通化できそう
 del_regex = re.compile(r'^◇|(?:\(.*?\)|【.*?】)|=写真[^、。]*?=|=写真、[^=。]*?(?:撮影|提供)=')
 sub_regex = re.compile(r'=写真[^=、。]*?([、。])|=写真、[^=。]*?(?:撮影|提供)([、。])')
-transtable = str.maketrans('1234567890 ()~=*+[{|}>,<];!:?&%"-/',
-                           '１２３４５６７８９０　（）〜＝＊＋［｛｜｝〉，〈］；！：？＆％、ー／')
+transtable = str.maketrans('ABCDEFGHIJKLMNOPQRSTUVWXYZabdcefghijklmnopqrstuvwxyz0123456789 ()~=*+[{|}>,<];!:?&%"-/',
+                           'ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ０１２３４５６７８９　（）〜＝＊＋［｛｜｝〉，〈］；！：？＆％、ー／')
 
 def preprocess_sentence(sent):
     sent = re.sub(del_regex, '', sent)
@@ -168,6 +168,7 @@ def get_minimal_basic_tree(basics, morphemes, oc_indices):
     for i in range(len(basics)):
         for j in basics[i]['morphemes']:
             if j in oc_indices:
+                print(morphemes[j][0])
                 necessary_basic_ids.add(i)
 
     # if is_no_predicates:
@@ -308,8 +309,10 @@ def grammarize_headline(headline, sent):
         title_juman_output = read_to_EOS(juman.stdout)
         title_morphemes = decode_juman_info(title_juman_output)
         
-        open_classes = extract_open_classes(title_morphemes)
+        if len(title_morphemes) <= 6:
+            return
 
+        open_classes = extract_open_classes(title_morphemes)
         # TODO: 単語の順序も考える
         if len(open_classes) >= 4 and set(open_classes).issubset(set(sent_words)):
             knp.stdin.write(sent_juman_output)
