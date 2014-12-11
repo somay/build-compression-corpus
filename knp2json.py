@@ -56,6 +56,7 @@ def analyze_knp(knp_tab_output):
         else:
             # d['phrase'] = len(phrases) - 1
             m = analyze_morpheme(f[:-1])
+            m.append(len(phrases) - 1)
             morphemes.append(m)
             phrases[-1]['morphemes'].append(len(morphemes)-1)
             basics[-1]['morphemes'].append(len(morphemes)-1)

@@ -3,6 +3,10 @@ from subprocess import Popen, PIPE
 import sys, re, functools, itertools, unittest
 import xml.etree.ElementTree as ET
 from knp2json import analyze_knp, show_analyzed_knp_info
+from collections import defaultdict
+
+class BadPairException(Exception):
+    pass
 
 juman = Popen("juman", stdin=PIPE, stdout=PIPE, universal_newlines=True)
 knp = Popen(("knp", "-ne", "-tab"), stdin=PIPE, stdout=PIPE, universal_newlines=True)
@@ -150,6 +154,12 @@ def mark_words_in_sent(sent_mrphs, title_mrphs, open_classes):
 
     return marked_mrphs
 
+def is_no_predicates(basic_ids, basics):
+    for i in basic_ids:
+        if basics[i]['features']['用言']:
+            return False
+    return True
+
 # 連結で
 # 述語で終わっている
 # 最小の木
@@ -160,7 +170,11 @@ def get_minimal_basic_tree(basics, morphemes, oc_indices):
             if j in oc_indices:
                 necessary_basic_ids.add(i)
 
+    # if is_no_predicates:
+    #     raise BadPairException
+
     dependency_paths = []
+    cooccurence = defaultdict(set)
     for i in necessary_basic_ids:
         path = {i}  # path from phrase[i] to the root of phrase tree
         while i != -1:
@@ -168,10 +182,22 @@ def get_minimal_basic_tree(basics, morphemes, oc_indices):
             #     i = basics[i]['relation']
             #     continue
             path.add(i)
-            try:                            # 用言の主語を必ず短縮文に含める
-                path.add(basics[i]['caseAnalysis']['ガ'][-1]['#basics'])
-            except:
+
+            # 「する」「なる」の場合には、格を含める
+            if morphemes[basics[i]['morphemes'][0]][2] in ['する', 'なる']:
+                for case in ['ト', 'ニ', 'カラ']:
+                    try:
+                        cooccurence[i].add(basics[i]['caseAnalysis'][case][-1]['#basics'])
+                    except KeyError:
+                        pass
+
+            # 用言の主語を必ず短縮文に含める
+            try:
+                cooccurence[i].add(basics[i]['caseAnalysis']['ガ'][-1]['#basics'])
+            except KeyError:
                 pass
+
+            # 並列関係にある基本句の一方をとばす
             if basics[i]['relationType'] == 'P':
                 i = basics[i]['relation']
             i = basics[i]['relation']
@@ -190,7 +216,15 @@ def get_minimal_basic_tree(basics, morphemes, oc_indices):
     for i in intersection.union(complement):
         compressed_basic_ids.remove(i)
 
+    for i in compressed_basic_ids:
+        for j in cooccurence[i]:
+            compressed_basic_ids.append(j)
+
+
     return compressed_basic_ids
+
+# 後ろの助詞を取ってくる（活用も変える）
+# 「行う」「開く」を「で」におきかえる
 
 def compress_sentence(knp_info, title_mrphs, oc_pairs):
     ocs_in_title, ocs_in_sent = list(zip(*oc_pairs))
@@ -213,14 +247,27 @@ def compress_sentence(knp_info, title_mrphs, oc_pairs):
         if i+2 < len(title_mrphs) and title_mrphs[i+1][3] == '助詞' and i+2 in ocs_in_title:
             ks = [k for k in sorted(ocs_in_sent) if k > j]
             if ks and morphemes[ks[0]][2] == title_mrphs[i+2][2]:
-                for im in range(j+1, ks[0]):
-                    morphemes[im][0] = ""
-                morphemes[j+1][0] = title_mrphs[i+1][0]
+                # 構文木上でつながっていないフレーズをタイトルの助詞で置き換えない
+                k, dst = morphemes[i][13], morphemes[ks[0]][13]
+                is_linked = False
+                while True:
+                    if k == dst:
+                        is_linked = True
+                        break
+                    elif k == -1:
+                        is_linked = False
+                        break
+                    k = phrases[k]['relation']
+                    
+                # タイトルの助詞で置き換えても対して文字数が減らない場合は置き換えない
+                if is_linked and j + 2 != ks[0]:
+                    for im in range(j+1, ks[0]):
+                        morphemes[im][0] = ""
+                    morphemes[j+1][0] = title_mrphs[i+1][0]
 
     compressed_mrph_ids = []
     for i in compressed_phrase_ids:
         j = phrases[i]['relation']
-
         if phrases[i]['relationType'] == 'P' and not j in compressed_mrph_ids:
             # 並列している後の助詞を取ってくる
             im = phrases[i]['morphemes'][:]
@@ -230,7 +277,7 @@ def compress_sentence(knp_info, title_mrphs, oc_pairs):
             for k in reversed(phrases[j]['morphemes']):
                 if morphemes[k][3] == '特殊':
                     continue
-                elif morphemes[k][3] == '助詞':
+                elif morphemes[k][3] in ['助詞', '接尾辞']:
                     compressed_mrph_ids.append(k)
                     break
         else:
@@ -270,7 +317,10 @@ def grammarize_headline(headline, sent):
             knp_info = analyze_knp(sent_knp_output)
             oc_pairs = mark_words_in_sent(knp_info['morphemes'], title_morphemes, open_classes)
             # show_analyzed_knp_info(knp_info)
-            compressed = compress_sentence(knp_info, title_morphemes, oc_pairs)
+            try:
+                compressed = compress_sentence(knp_info, title_morphemes, oc_pairs)
+            except BadPairException:
+                return
             return compressed
         else:
             titles = titles[:-1]
@@ -278,6 +328,15 @@ def grammarize_headline(headline, sent):
 
 if __name__ == '__main__':
     for hline, sent in yield_headline_and_1st_sent(sys.argv[1]):
+        hline = "水泳:世界選手権 シンクロ代表に足立ら11人"
+        sent =" 日本水泳連盟は5日、東京都内で選手選考委員会を開き、今年7月の世界選手権(上海)シンクロナイズドスイミング代表に、ソロの足立夢実(東京シンクロク)ら11人を選んだ。"
+
+        # hline = "北朝鮮:韓国に「無条件対話を」"
+        # sent=" 【平壌・共同】北朝鮮は5日、朝鮮中央通信を通じ、韓国に無条件の当局間対話開催を提案するなど4項目からなる政府、政党、団体の「連合声明」を発表した。"
+
+        # hline = "生物多様性保全:企業の75%「取り組んでない」--環境省調査"
+        # sent = " 国内企業を対象とした環境省のアンケートで、事業活動の中で生物多様性の保全に「取り組んでいない」と回答した企業が75%に上ることが分かった。"
+
         # hline = "オーロラ展:野口宇宙飛行士らが宇宙で撮影 東京・新宿で5日から"
         # sent = " 野口聡一宇宙飛行士(45)らが国際宇宙ステーションから撮影したオーロラの写真を中心とした「宇宙から見たオーロラ展2011」が5~31日、東京都新宿区新宿3のコニカミノルタプラザ(03・3225・5001)で開かれる。"
         compressed = grammarize_headline(hline, sent[1:])
@@ -286,7 +345,7 @@ if __name__ == '__main__':
             print(sent)
             print(compressed)
             print()
-        #     sys.stdin.readline()
+            sys.stdin.readline()
     knp.terminate()
     juman.terminate()
     sys.exit(0)
