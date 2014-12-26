@@ -2,8 +2,9 @@
 from subprocess import Popen, PIPE
 import sys, re, functools, itertools, unittest, pickle
 import xml.etree.ElementTree as ET
-from knp2json import analyze_knp, show_analyzed_knp_info
 from collections import defaultdict
+from knp2json import analyze_knp, show_analyzed_knp_info
+from knp import decode_juman_info, preprocess_sentence, read_to_EOS
 
 class BadPairException(Exception):
     pass
@@ -34,35 +35,6 @@ def yield_headline_and_1st_sent(filename):
         elif elem.tag == 'DOC':
             continue
         elem.clear()
-
-def decode_juman_info(juman_output):
-    result = []
-    for line in juman_output.split('\n'):
-        if line != 'EOS' and line != '' and line[0] != '@':
-            morpheme = line.split(' ', 11)
-            result.append(morpheme)
-    return result
-        
-# TODO: 共通化できそう
-del_regex = re.compile(r'^◇|(?:\(.*?\)|【.*?】)|=写真[^、。]*?=|=写真、[^=。]*?(?:撮影|提供)=')
-sub_regex = re.compile(r'=写真[^=、。]*?([、。])|=写真、[^=。]*?(?:撮影|提供)([、。])')
-transtable = str.maketrans('ABCDEFGHIJKLMNOPQRSTUVWXYZabdcefghijklmnopqrstuvwxyz0123456789 ()~=*+[{|}>,<];!:?&%"-/',
-                           'ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ０１２３４５６７８９　（）〜＝＊＋［｛｜｝〉，〈］；！：？＆％、ー／')
-
-def preprocess_sentence(sent):
-    sent = re.sub(del_regex, '', sent)
-    sent = re.sub(sub_regex, r'\1', sent)
-    sent = sent.translate(transtable)
-    return sent
-
-def read_to_EOS(stream):
-    output = ""
-    while True:
-        line = stream.readline()
-        output += line
-        if line == 'EOS\n':
-            break
-    return output
 
 def is_open_class(mrph):
     return mrph[3] in ['名詞', '形容詞', '副詞', '動詞'] or \
