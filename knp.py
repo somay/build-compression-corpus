@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 from subprocess import Popen, PIPE
-import sys, re, functools, itertools, unittest
+import sys, re, functools, itertools, unittest, pickle
 import xml.etree.ElementTree as ET
 from knp2json import analyze_knp, show_analyzed_knp_info
 from collections import defaultdict
@@ -10,6 +10,8 @@ class BadPairException(Exception):
 
 juman = Popen("juman", stdin=PIPE, stdout=PIPE, universal_newlines=True)
 knp = Popen(("knp", "-ne", "-tab"), stdin=PIPE, stdout=PIPE, universal_newlines=True)
+with open('katuyou.pickle', 'rb') as f:
+    inflection_table = pickle.load(f)
 
 def yield_headline_and_1st_sent(filename):
     title, text = '', ''
@@ -168,7 +170,6 @@ def get_minimal_basic_tree(basics, morphemes, oc_indices):
     for i in range(len(basics)):
         for j in basics[i]['morphemes']:
             if j in oc_indices:
-                print(morphemes[j][0])
                 necessary_basic_ids.add(i)
 
     # if is_no_predicates:
@@ -243,7 +244,6 @@ def compress_sentence(knp_info, title_mrphs, oc_pairs):
     # if 文のopen classの並びにおいて隣り合うopen classがタイトルにおいても隣り合っている
     # and タイトルにおいて、隣り合うopen classの間に助詞がある
     # then 文中のopen classの間の形態素をその助詞に置き換える
-    # print(open_classes)
     for i,j in oc_pairs:
         if i+2 < len(title_mrphs) and title_mrphs[i+1][3] == '助詞' and i+2 in ocs_in_title:
             ks = [k for k in sorted(ocs_in_sent) if k > j]
@@ -260,7 +260,7 @@ def compress_sentence(knp_info, title_mrphs, oc_pairs):
                         break
                     k = phrases[k]['relation']
                     
-                # タイトルの助詞で置き換えても対して文字数が減らない場合は置き換えない
+                # タイトルの助詞で置き換えてたいして文字数が減らない場合は置き換えない
                 if is_linked and j + 2 != ks[0]:
                     for im in range(j+1, ks[0]):
                         morphemes[im][0] = ""
@@ -269,11 +269,31 @@ def compress_sentence(knp_info, title_mrphs, oc_pairs):
     compressed_mrph_ids = []
     for i in compressed_phrase_ids:
         j = phrases[i]['relation']
-        if phrases[i]['relationType'] == 'P' and not j in compressed_mrph_ids:
+        if phrases[i]['relationType'] == 'P' and not j in compressed_phrase_ids:
             # 並列している後の助詞を取ってくる
+            if phrases[i]['features']['用言']:
+                print('##########################')
+                # 対応している用言を見つける
+                try:
+                    infl1 = next(k for k in reversed(phrases[i]['morphemes']) if morphemes[k][12]['活用語'])
+                    infl2 = next(k for k in reversed(phrases[j]['morphemes']) if morphemes[k][12]['活用語'])
+                    for frm in inflection_table[morphemes[infl1][8]][morphemes[infl1][10]]:
+                        for to in inflection_table[morphemes[infl1][8]][morphemes[infl2][10]]:
+                            if frm == '*' and to == '*':
+                                pass
+                            elif frm == '*':
+                                morphemes[infl1][0] += to
+                            elif to == '*':
+                                morphemes[infl1][0] = morphemes[infl1][0].replace(frm, '')
+                            else:
+                                morphemes[infl1][0] = morphemes[infl1][0].replace(frm, to)
+                except StopIteration:
+                    pass
             im = phrases[i]['morphemes'][:]
+            first_mrph, second_mrph = None, None
             while morphemes[im[-1]][3] in ['助詞', '特殊']:
                 im.pop(-1)
+            first_mrph = im[-1]
             compressed_mrph_ids += im
             for k in reversed(phrases[j]['morphemes']):
                 if morphemes[k][3] == '特殊':
@@ -331,8 +351,13 @@ def grammarize_headline(headline, sent):
 
 if __name__ == '__main__':
     for hline, sent in yield_headline_and_1st_sent(sys.argv[1]):
-        hline = "水泳:世界選手権 シンクロ代表に足立ら11人"
-        sent =" 日本水泳連盟は5日、東京都内で選手選考委員会を開き、今年7月の世界選手権(上海)シンクロナイズドスイミング代表に、ソロの足立夢実(東京シンクロク)ら11人を選んだ。"
+        # hline = "李・韓国大統領:朝鮮半島平和「成し遂げる」"
+        # sent = " 【ソウル西脇真一】韓国の李明博(イミョンバク)大統領は1日付で「新年の辞」を発表、11年には「必ず朝鮮半島の平和を成し遂げ、経済も継続して成長させていくことができると確信する」と強調した。"
+
+        # hline = "水泳:世界選手権 シンクロ代表に足立ら11人"
+        # sent =" 日本水泳連盟は5日、東京都内で選手選考委員会を開き、今年7月の世界選手権(上海)シンクロナイズドスイミング代表に、ソロの足立夢実(東京シンクロク)ら11人を選んだ。"
+        # hline = "秋葉・広島市長:4選不出馬 ヒロシマに驚き 戸惑う五輪招致関係者 【大阪】"
+        # sent = " 平和都市・ヒロシマの顔として、核兵器廃絶運動に精力的に取り組んできた秋葉忠利・広島市長(68)が、次期市長選への不出馬を表明した4日、被爆者や平和団体から驚きの声が上がった。"
 
         # hline = "北朝鮮:韓国に「無条件対話を」"
         # sent=" 【平壌・共同】北朝鮮は5日、朝鮮中央通信を通じ、韓国に無条件の当局間対話開催を提案するなど4項目からなる政府、政党、団体の「連合声明」を発表した。"
@@ -348,7 +373,7 @@ if __name__ == '__main__':
             print(sent)
             print(compressed)
             print()
-            sys.stdin.readline()
+            # sys.stdin.readline()
     knp.terminate()
     juman.terminate()
     sys.exit(0)
