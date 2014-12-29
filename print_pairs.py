@@ -84,7 +84,7 @@ def mark_words_in_sent(sent_mrphs, title_mrphs, open_classes):
                     identity_count = 0
                 scores[(i,j)] = max(scores[(i,j)], identity_count - 1)
 
-             # 周辺のopen classの一致によるscore付け
+            # 周辺のopen classの一致によるscore付け
             oc_score = 0
             len_sent = len(sent_mrphs)
 
