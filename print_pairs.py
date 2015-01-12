@@ -236,7 +236,7 @@ def compress_sentence(knp_info, title_mrphs, oc_pairs):
                 if is_linked and j + 2 != ks[0]:
                     for im in range(j+1, ks[0]):
                         morphemes[im][0] = ""
-                    morphemes[j+1][0] = title_mrphs[i+1][0]
+                    morphemes[ks[0] - 1][0] = title_mrphs[i+1][0]
 
     compressed_mrph_ids = []
     for i in compressed_phrase_ids:
@@ -301,7 +301,7 @@ def compress_sentence(knp_info, title_mrphs, oc_pairs):
     alignment = []
     count = 0
     for i in compressed_mrph_ids:
-        if not (morphemes[i][0] == '「' or morphemes[i][0] == '」'):
+        if not morphemes[i][0] in ['', '「', '」']:
             compressed += morphemes[i][0]
             alignment.append((i, count))
             count += 1
@@ -365,7 +365,7 @@ if __name__ == '__main__':
         if compressed_alignment:
             compressed, alignment = compressed_alignment
             print(hline)
-            print(preprocess_sentence(sent))
+            print(preprocess_sentence(sent[1:]))
             print(compressed)
             for i, j in alignment:
                 print(str(i) + '-' + str(j), end=' ')
