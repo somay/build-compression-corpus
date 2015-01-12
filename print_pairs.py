@@ -242,14 +242,14 @@ def compress_sentence(knp_info, title_mrphs, oc_pairs):
     for i in compressed_phrase_ids:
         j = phrases[i]['relation']
         if phrases[i]['relationType'] == 'P' and not j in compressed_phrase_ids:
-            pi, pj = '', ''
-            for ib in phrases[i]['basics']:
-                for im in basics[ib]['morphemes']:
-                    pi += morphemes[im][0]
-            for ib in phrases[j]['basics']:
-                for im in basics[ib]['morphemes']:
-                    pj += morphemes[im][0]            
-            print('#### relationType is P ####', pi, pj)
+#             pi, pj = '', ''
+#             for ib in phrases[i]['basics']:
+#                 for im in basics[ib]['morphemes']:
+#                     pi += morphemes[im][0]
+#             for ib in phrases[j]['basics']:
+#                 for im in basics[ib]['morphemes']:
+#                     pj += morphemes[im][0]            
+#             print('#### relationType is P ####', pi, pj)
             # 並列している後の助詞を取ってくる
             if phrases[i]['features']['用言'] in ['動', '形']:
                 # 対応している用言を見つける
@@ -257,7 +257,7 @@ def compress_sentence(knp_info, title_mrphs, oc_pairs):
                     infl1 = next(k for k in reversed(phrases[i]['morphemes']) if morphemes[k][12]['活用語'])
                     infl2 = next(k for k in reversed(phrases[j]['morphemes']) if morphemes[k][12]['活用語'])
                     for frm in inflection_table[morphemes[infl1][8]][morphemes[infl1][10]]:
-                        for to in inflection_table[morphemes[infl1][8]][morphemes[infl2][10]]:
+                        for to in inflection_table[morphemes[infl1][8]][morphemes[infl2][10]]: # IndexErrorになるかも
                             if frm == '*' and to == '*':
                                 pass
                             elif frm == '*':
@@ -272,6 +272,12 @@ def compress_sentence(knp_info, title_mrphs, oc_pairs):
                     compressed_mrph_ids += former + latter
                 except StopIteration:
                     pass
+                except IndexError:
+                    print('IndexError while modifying inflection')
+                    print(infl1, morphemes[infl1], file=sys.stderr)
+                    print(infl2, morphemes[infl2], file=sys.stderr)
+                    print(''.join(m[0] for m in morphemes), file=sys.stderr)
+                    raise BadPairException
             else:
                 ims = phrases[i]['morphemes'][:]
                 while morphemes[ims[-1]][3] in ['助詞', '接尾辞', '特殊']:
@@ -359,7 +365,7 @@ if __name__ == '__main__':
         if compressed_alignment:
             compressed, alignment = compressed_alignment
             print(hline)
-            print(sent)
+            print(preprocess_sentence(sent))
             print(compressed)
             for i, j in alignment:
                 print(str(i) + '-' + str(j), end=' ')
