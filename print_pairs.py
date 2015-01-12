@@ -10,7 +10,7 @@ class BadPairException(Exception):
     pass
 
 juman = Popen("juman", stdin=PIPE, stdout=PIPE, universal_newlines=True)
-knp = Popen(("knp", "-ne", "-tab"), stdin=PIPE, stdout=PIPE, universal_newlines=True)
+knp = Popen(("knp", "-dpnd-fast", "-tab"), stdin=PIPE, stdout=PIPE, universal_newlines=True)
 with open('katuyou.pickle', 'rb') as f:
     inflection_table = pickle.load(f)
 
@@ -242,9 +242,16 @@ def compress_sentence(knp_info, title_mrphs, oc_pairs):
     for i in compressed_phrase_ids:
         j = phrases[i]['relation']
         if phrases[i]['relationType'] == 'P' and not j in compressed_phrase_ids:
+            pi, pj = '', ''
+            for ib in phrases[i]['basics']:
+                for im in basics[ib]['morphemes']:
+                    pi += morphemes[im][0]
+            for ib in phrases[j]['basics']:
+                for im in basics[ib]['morphemes']:
+                    pj += morphemes[im][0]            
+            print('#### relationType is P ####', pi, pj)
             # 並列している後の助詞を取ってくる
-            if phrases[i]['features']['用言']:
-                print('##########################')
+            if phrases[i]['features']['用言'] in ['動', '形']:
                 # 対応している用言を見つける
                 try:
                     infl1 = next(k for k in reversed(phrases[i]['morphemes']) if morphemes[k][12]['活用語'])
@@ -259,20 +266,25 @@ def compress_sentence(knp_info, title_mrphs, oc_pairs):
                                 morphemes[infl1][0] = morphemes[infl1][0].replace(frm, '')
                             else:
                                 morphemes[infl1][0] = morphemes[infl1][0].replace(frm, to)
+
+                    former = list(filter(lambda l: l <= infl1, phrases[i]['morphemes']))
+                    latter = list(filter(lambda l: l >  infl2, phrases[j]['morphemes']))
+                    compressed_mrph_ids += former + latter
                 except StopIteration:
                     pass
-            im = phrases[i]['morphemes'][:]
-            first_mrph, second_mrph = None, None
-            while morphemes[im[-1]][3] in ['助詞', '特殊']:
-                im.pop(-1)
-            first_mrph = im[-1]
-            compressed_mrph_ids += im
-            for k in reversed(phrases[j]['morphemes']):
-                if morphemes[k][3] == '特殊':
-                    continue
-                elif morphemes[k][3] in ['助詞', '接尾辞']:
-                    compressed_mrph_ids.append(k)
-                    break
+            else:
+                ims = phrases[i]['morphemes'][:]
+                while morphemes[ims[-1]][3] in ['助詞', '接尾辞', '特殊']:
+                    ims.pop(-1)
+                compressed_mrph_ids += ims
+                rest = []
+                for k in reversed(phrases[j]['morphemes']):
+                    if morphemes[k][3] in ['助詞', '接尾辞', '特殊']:
+                        rest.append(k)
+                    else:
+                        break
+                compressed_mrph_ids += list(reversed(rest))
+                    
         else:
             compressed_mrph_ids += phrases[i]['morphemes']
 
@@ -280,10 +292,14 @@ def compress_sentence(knp_info, title_mrphs, oc_pairs):
         compressed_mrph_ids.pop(-1)
 
     compressed = ""
+    alignment = []
+    count = 0
     for i in compressed_mrph_ids:
         if not (morphemes[i][0] == '「' or morphemes[i][0] == '」'):
             compressed += morphemes[i][0]
-    return compressed
+            alignment.append((i, count))
+            count += 1
+    return compressed, alignment
 
 
 def grammarize_headline(headline, sent):
@@ -313,10 +329,10 @@ def grammarize_headline(headline, sent):
             oc_pairs = mark_words_in_sent(knp_info['morphemes'], title_morphemes, open_classes)
             # show_analyzed_knp_info(knp_info)
             try:
-                compressed = compress_sentence(knp_info, title_morphemes, oc_pairs)
+                compressed, alignment = compress_sentence(knp_info, title_morphemes, oc_pairs)
             except BadPairException:
                 return
-            return compressed
+            return compressed, alignment
         else:
             titles = titles[:-1]
 
@@ -339,12 +355,15 @@ if __name__ == '__main__':
 
         # hline = "オーロラ展:野口宇宙飛行士らが宇宙で撮影 東京・新宿で5日から"
         # sent = " 野口聡一宇宙飛行士(45)らが国際宇宙ステーションから撮影したオーロラの写真を中心とした「宇宙から見たオーロラ展2011」が5~31日、東京都新宿区新宿3のコニカミノルタプラザ(03・3225・5001)で開かれる。"
-        compressed = grammarize_headline(hline, sent[1:])
-        if compressed:
+        compressed_alignment = grammarize_headline(hline, sent[1:])
+        if compressed_alignment:
+            compressed, alignment = compressed_alignment
             print(hline)
             print(sent)
             print(compressed)
-            print()
+            for i, j in alignment:
+                print(str(i) + '-' + str(j), end=' ')
+            print('\n')
             # sys.stdin.readline()
     knp.terminate()
     juman.terminate()
