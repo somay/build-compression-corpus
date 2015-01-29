@@ -11,7 +11,7 @@ class BadPairException(Exception):
 
 juman = Popen("juman", stdin=PIPE, stdout=PIPE, universal_newlines=True)
 knp = Popen(("knp", "-dpnd-fast", "-tab"), stdin=PIPE, stdout=PIPE, universal_newlines=True)
-with open('katuyou.pickle', 'rb') as f:
+with open('/home/somay/code/build_corpus/katuyou.pickle', 'rb') as f:
     inflection_table = pickle.load(f)
 
 def yield_headline_and_1st_sent(filename):
@@ -218,7 +218,7 @@ def compress_sentence(knp_info, title_mrphs, oc_pairs):
     # then 文中のopen classの間の形態素をその助詞に置き換える
     for i,j in oc_pairs:
         if i+2 < len(title_mrphs) and title_mrphs[i+1][3] == '助詞' and i+2 in ocs_in_title:
-            ks = [k for k in sorted(ocs_in_sent) if k > j]
+            ks = [k for k in sorted(ocs_in_sent) if k >= j + 2]
             if ks and morphemes[ks[0]][2] == title_mrphs[i+2][2]:
                 # 構文木上でつながっていないフレーズをタイトルの助詞で置き換えない
                 k, dst = morphemes[i][13], morphemes[ks[0]][13]
@@ -273,7 +273,7 @@ def compress_sentence(knp_info, title_mrphs, oc_pairs):
                 except StopIteration:
                     pass
                 except IndexError:
-                    print('IndexError while modifying inflection')
+                    print('IndexError while modifying inflection', file=sys.stderr)
                     print(infl1, morphemes[infl1], file=sys.stderr)
                     print(infl2, morphemes[infl2], file=sys.stderr)
                     print(''.join(m[0] for m in morphemes), file=sys.stderr)
@@ -342,35 +342,30 @@ def grammarize_headline(headline, sent):
         else:
             titles = titles[:-1]
 
+def yield_headline_and_1st_sent(filename):
+    is_headline = True
+    headline = None
+    with open(filename) as f:
+        for line in f.readlines():
+            if is_headline:
+                headline = line.rsplit()[0]
+            else:
+                yield headline, line.rsplit()[0]
+            is_headline = not is_headline
 
 if __name__ == '__main__':
     for hline, sent in yield_headline_and_1st_sent(sys.argv[1]):
-        # hline = "李・韓国大統領:朝鮮半島平和「成し遂げる」"
-        # sent = " 【ソウル西脇真一】韓国の李明博(イミョンバク)大統領は1日付で「新年の辞」を発表、11年には「必ず朝鮮半島の平和を成し遂げ、経済も継続して成長させていくことができると確信する」と強調した。"
-
-        # hline = "水泳:世界選手権 シンクロ代表に足立ら11人"
-        # sent =" 日本水泳連盟は5日、東京都内で選手選考委員会を開き、今年7月の世界選手権(上海)シンクロナイズドスイミング代表に、ソロの足立夢実(東京シンクロク)ら11人を選んだ。"
-        # hline = "秋葉・広島市長:4選不出馬 ヒロシマに驚き 戸惑う五輪招致関係者 【大阪】"
-        # sent = " 平和都市・ヒロシマの顔として、核兵器廃絶運動に精力的に取り組んできた秋葉忠利・広島市長(68)が、次期市長選への不出馬を表明した4日、被爆者や平和団体から驚きの声が上がった。"
-
-        # hline = "北朝鮮:韓国に「無条件対話を」"
-        # sent=" 【平壌・共同】北朝鮮は5日、朝鮮中央通信を通じ、韓国に無条件の当局間対話開催を提案するなど4項目からなる政府、政党、団体の「連合声明」を発表した。"
-
-        # hline = "生物多様性保全:企業の75%「取り組んでない」--環境省調査"
-        # sent = " 国内企業を対象とした環境省のアンケートで、事業活動の中で生物多様性の保全に「取り組んでいない」と回答した企業が75%に上ることが分かった。"
-
-        # hline = "オーロラ展:野口宇宙飛行士らが宇宙で撮影 東京・新宿で5日から"
-        # sent = " 野口聡一宇宙飛行士(45)らが国際宇宙ステーションから撮影したオーロラの写真を中心とした「宇宙から見たオーロラ展2011」が5~31日、東京都新宿区新宿3のコニカミノルタプラザ(03・3225・5001)で開かれる。"
-        compressed_alignment = grammarize_headline(hline, sent[1:])
+        sent = sent[1:] if sent[0] == ' ' else sent
+        compressed_alignment = grammarize_headline(hline, sent)
         if compressed_alignment:
             compressed, alignment = compressed_alignment
             print(hline)
-            print(preprocess_sentence(sent[1:]))
+            print(preprocess_sentence(sent))
             print(compressed)
             for i, j in alignment:
                 print(str(i) + '-' + str(j), end=' ')
             print('\n')
-            # sys.stdin.readline()
+            sys.stdin.readline()
     knp.terminate()
     juman.terminate()
     sys.exit(0)
