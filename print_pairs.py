@@ -41,7 +41,7 @@ def yield_headline_and_1st_sent(filename):
 #     is_headline = True
 #     headline = None
 #     with open(filename) as f:
-#         for line in f.readlines():
+#         for line in f:
 #             if is_headline:
 #                 headline = line.rsplit()[0]
 #             else:
@@ -356,8 +356,11 @@ def grammarize_headline(headline, sent):
 
 
 if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print('usage: ./print_pairs.py xml-file-like-毎日新聞コーパス > file-to-store-pairs.txt', file=sys.stderr)
+        sys.exit(1)
     for hline, sent in yield_headline_and_1st_sent(sys.argv[1]):
-        sent = sent[1:] if sent[0] == ' ' else sent
+        sent = sent.lstrip().rstrip()
         compressed_alignment = grammarize_headline(hline, sent)
         if compressed_alignment:
             compressed, alignment = compressed_alignment
