@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-from knp import preprocess_sentence
+from knp.knpinfo import preprocess_sentence
 import sys
 if __name__ == '__main__':
     for sent in sys.stdin.readlines():

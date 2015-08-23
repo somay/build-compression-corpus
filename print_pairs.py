@@ -1,17 +1,17 @@
 #!/usr/bin/python3
 from subprocess import Popen, PIPE
-import sys, re, functools, itertools, unittest, pickle
+import sys, re, functools, pickle
 import xml.etree.ElementTree as ET
 from collections import defaultdict
-from knp2json import analyze_knp, show_analyzed_knp_info
-from knp import decode_juman_info, preprocess_sentence, read_to_EOS
+from knp.knp2json import analyze_knp
+from knp.knpinfo import decode_juman_info, preprocess_sentence, read_until_EOS
 
 class BadPairException(Exception):
     pass
 
-juman = Popen("juman", stdin=PIPE, stdout=PIPE, universal_newlines=True)
-knp = Popen(("knp", "-dpnd-fast", "-tab"), stdin=PIPE, stdout=PIPE, universal_newlines=True)
-with open('/home/somay/code/build_corpus/katuyou.pickle', 'rb') as f:
+juman_prc = Popen("juman", stdin=PIPE, stdout=PIPE, universal_newlines=True)
+knp_prc = Popen(("knp", "-dpnd-fast", "-tab"), stdin=PIPE, stdout=PIPE, universal_newlines=True)
+with open('./katuyou.pickle', 'rb') as f:
     inflection_table = pickle.load(f)
 
 def yield_headline_and_1st_sent(filename):
@@ -35,6 +35,19 @@ def yield_headline_and_1st_sent(filename):
         elif elem.tag == 'DOC':
             continue
         elem.clear()
+
+# データが奇数行目 = タイトル, 偶数行目 = 一文目という形式で与えられたとき用
+# def yield_headline_and_1st_sent(filename):
+#     is_headline = True
+#     headline = None
+#     with open(filename) as f:
+#         for line in f.readlines():
+#             if is_headline:
+#                 headline = line.rsplit()[0]
+#             else:
+#                 yield headline, line.rsplit()[0]
+#             is_headline = not is_headline
+
 
 def is_open_class(mrph):
     return mrph[3] in ['名詞', '形容詞', '副詞', '動詞'] or \
@@ -309,8 +322,8 @@ def compress_sentence(knp_info, title_mrphs, oc_pairs):
 
 
 def grammarize_headline(headline, sent):
-    juman.stdin.write(preprocess_sentence(sent) + '\n')
-    sent_juman_output = read_to_EOS(juman.stdout)
+    juman_prc.stdin.write(preprocess_sentence(sent) + '\n')
+    sent_juman_output = read_until_EOS(juman_prc.stdout)
     sent_morphemes = decode_juman_info(sent_juman_output)
 
     sent_words = extract_open_classes(sent_morphemes)
@@ -319,8 +332,8 @@ def grammarize_headline(headline, sent):
     titles = [s for t in headline.split('　') for s in t.split('ーー')]
     while titles:
         title = '　'.join(titles) + '\n'
-        juman.stdin.write(preprocess_sentence(title))
-        title_juman_output = read_to_EOS(juman.stdout)
+        juman_prc.stdin.write(preprocess_sentence(title))
+        title_juman_output = read_until_EOS(juman_prc.stdout)
         title_morphemes = decode_juman_info(title_juman_output)
         
         if len(title_morphemes) <= 6:
@@ -329,11 +342,10 @@ def grammarize_headline(headline, sent):
         open_classes = extract_open_classes(title_morphemes)
         # TODO: 単語の順序も考える
         if len(open_classes) >= 4 and set(open_classes).issubset(set(sent_words)):
-            knp.stdin.write(sent_juman_output)
-            sent_knp_output = read_to_EOS(knp.stdout)
+            knp_prc.stdin.write(sent_juman_output)
+            sent_knp_output = read_until_EOS(knp_prc.stdout)
             knp_info = analyze_knp(sent_knp_output)
             oc_pairs = mark_words_in_sent(knp_info['morphemes'], title_morphemes, open_classes)
-            # show_analyzed_knp_info(knp_info)
             try:
                 compressed, alignment = compress_sentence(knp_info, title_morphemes, oc_pairs)
             except BadPairException:
@@ -342,16 +354,6 @@ def grammarize_headline(headline, sent):
         else:
             titles = titles[:-1]
 
-def yield_headline_and_1st_sent(filename):
-    is_headline = True
-    headline = None
-    with open(filename) as f:
-        for line in f.readlines():
-            if is_headline:
-                headline = line.rsplit()[0]
-            else:
-                yield headline, line.rsplit()[0]
-            is_headline = not is_headline
 
 if __name__ == '__main__':
     for hline, sent in yield_headline_and_1st_sent(sys.argv[1]):
@@ -365,7 +367,7 @@ if __name__ == '__main__':
             for i, j in alignment:
                 print(str(i) + '-' + str(j), end=' ')
             print('\n')
-            sys.stdin.readline()
-    knp.terminate()
-    juman.terminate()
+            # sys.stdin.readline()
+    knp_prc.terminate()
+    juman_prc.terminate()
     sys.exit(0)
